@@ -1,0 +1,15 @@
+*.map
+*.sym
+*.lk
+*.lst
+*.noi
+*.rel
+*.cdb
+*.ihx
+*.asm
+
+command.com
+command2.com
+msxdos.sys
+msxdos2.sys
+.vscode/**
