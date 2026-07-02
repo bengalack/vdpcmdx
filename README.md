@@ -12,6 +12,7 @@ Both 50Hz and 60Hz are supported. 50Hz/PAL numbers gives "better" results as tim
 See [vdpcmd](https://github.com/bengalack/vdpcmd) for the fundamentals of this tool.
 
 ![screenshot](img/philips_nms_8245.jpg)
+This is the results from Philips NMS 8245 ("real"/masterdata is from Sony HB-F1XD)
 
 ## Requirements
 * **Run:** MSX2 or higher, MSX-DOS
