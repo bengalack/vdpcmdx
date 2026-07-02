@@ -200,26 +200,6 @@ const u16 const         aTARGETS[RASTER_LOCATION_COUNT][FREQ_COUNT][ORIENTATION_
                                 { // PAL
                                     { // LANDSCAPE
                                         // TEST #
-                                        { 1916, 2673, 2854, 1160, 2674 }, // NORMAL
-                                        { 1339, 1971, 2003,  773, 2000 }, // NO_SPRITES
-                                        { 2111, 3799, 3996, 1167, 3616 }, // NO_SCREEN
-                                        { 4005, 4195, 5313, 2313, 5137 }, // NORMAL_CPU
-                                        { 1908, 2106, 2668, 1156, 2573 }  // NO_SCREEN_CPU
-                                    },
-                                    { // PORTRAIT
-                                        // TEST #
-                                        { 1916, 2659, 2796, 1160, 2731 }, // NORMAL
-                                        { 1332, 1955, 1993,  773, 1981 }, // NO_SPRITES
-                                        { 2093, 3689, 3914, 1336, 3543 }, // NO_SCREEN
-                                        { 3920, 4120, 5094, 2111, 5092 }, // NORMAL_CPU
-                                        { 1869, 2106, 2626, 1144, 2609 }  // NO_SCREEN_CPU
-                                    }
-                                }
-                            },
-                            { // ACTIVE_AREA
-                                { // NTSC
-                                    { // LANDSCAPE
-                                        // TEST #
                                         { 1801, 1813, 1815, 1794, 1702 }, // NORMAL
                                         { 1265, 1275, 1275, 1257, 1274 }, // NO_SPRITES
                                         { 2512, 2538, 2541, 2268, 2302 }, // NO_SCREEN
@@ -233,6 +213,26 @@ const u16 const         aTARGETS[RASTER_LOCATION_COUNT][FREQ_COUNT][ORIENTATION_
                                         { 2461, 2485, 2488, 2223, 2254 }, // NO_SCREEN
                                         { 3229, 3231, 3247, 3165, 3240 }, // NORMAL_CPU
                                         { 1659, 1662, 1670, 1640, 1660 }  // NO_SCREEN_CPU
+                                    }
+                                }
+                            },
+                            { // ACTIVE_AREA
+                                { // NTSC
+                                    { // LANDSCAPE
+                                        // TEST #
+                                        { 1916, 2673, 2854, 1160, 2674 }, // NORMAL
+                                        { 1339, 1971, 2003,  773, 2000 }, // NO_SPRITES
+                                        { 2111, 3799, 3996, 1167, 3616 }, // NO_SCREEN
+                                        { 4005, 4195, 5313, 2313, 5137 }, // NORMAL_CPU
+                                        { 1908, 2106, 2668, 1156, 2573 }  // NO_SCREEN_CPU
+                                    },
+                                    { // PORTRAIT
+                                        // TEST #
+                                        { 1916, 2659, 2796, 1160, 2731 }, // NORMAL
+                                        { 1332, 1955, 1993,  773, 1981 }, // NO_SPRITES
+                                        { 2093, 3689, 3914, 1336, 3543 }, // NO_SCREEN
+                                        { 3920, 4120, 5094, 2111, 5092 }, // NORMAL_CPU
+                                        { 1869, 2106, 2626, 1144, 2609 }  // NO_SCREEN_CPU
                                     }
                                 },
                                 { // PAL
