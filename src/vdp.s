@@ -22,13 +22,18 @@
 
     CHGMOD      .equ 0x005F             ; BIOS routine used to initialize the screen
     LINL40      .equ 0xF3AE             ; 40 or 80
+    CRTCNT      .equ 0xF3B1             ; 24 or 26
 
     CHGCPU      .equ 0x0180             ; tame that turbo please
     GETCPU      .equ 0x0183
+    CHGET       .equ 0x009F
 
     VDPIO		.equ 0x98				; VRAM Data (Read/Write)
     VDPPORT1	.equ 0x99
     VDPSTREAM   .equ 0x9B
+
+    VDP_REG0    .equ 0xF3DF             ; line interrupt enable
+    LINE_INT_BITMASK .equ #0b10000      ; to be used with VDP_REG0. Flag(1) means enabled
 
     VDP_REG1    .equ 0xF3E0             ; ram copy
     SCR_BITMASK .equ #0b01000000        ; to be used with VDP_REG1. Flag(1) means enabled
@@ -37,11 +42,13 @@
     SPR_BITMASK .equ #0b00000010        ; to be used with VDP_REG8. Flag(1) means disabled
 
     VDP_REG9    .equ 0xFFE8             ; ram copy
-    FRQ_BITMASK .equ #0b00000010        ; to be used with VDP_REG9. Flag(1) means PAL
+    FRQ_BITMASK .equ #0b00000010        ; to be used with VDP_REG9. Flag(1) means PAL.
+    LINES212_BITMASK .equ #0b10000000   ; to be used with VDP_REG9. Flag(1) means 212.
 
     NMI         .equ 0x0066             ; subrom stuff
     EXTROM      .equ 0x015f             ; subrom stuff
     H_NMI       .equ 0xfdd6             ; subrom stuff
+
 
 ; ----------------------------------------------------------------------------
 ; EXTERNAL REFERENCES
@@ -50,7 +57,6 @@
     .globl      _g_bRecordingCPUHammering
     .globl      _g_uXPosL
     .globl      _HAMMERING_CODE_BLOCK
-    ; .globl      _NON_ZERO_BLOCK
 
 ;-------------------------
 ; IN:  			A - the value
@@ -73,6 +79,73 @@ _getPALRefreshRate::
     ld      a, (VDP_REG9)
     and     #FRQ_BITMASK
     srl     a
+    ret
+
+; ----------------------------------------------------------------------------
+; MODIFIES: AF
+;
+; void vdpSetInterruptLine(u8 uLine);
+_vdpSetInterruptLine::
+    di
+    vdpWriteReg 19
+    ei
+    ret
+
+; ----------------------------------------------------------------------------
+; MODIFIES: AF
+;
+; void vdpEnableLineInterruptNI(bool bEnable);
+_vdpEnableLineInterruptNI::
+    or      a
+    jr      z,disable_line_interrupt
+
+enable_line_interrupt:
+	ld		a,(VDP_REG0)
+	or		#LINE_INT_BITMASK
+	ld		(VDP_REG0), a
+    
+    jr      setup_line_interrupt_done
+
+disable_line_interrupt:
+	ld		a,(VDP_REG0)
+	and		#~LINE_INT_BITMASK
+	ld		(VDP_REG0), a
+
+setup_line_interrupt_done:
+
+    vdpWriteReg 0
+    ret
+
+; ----------------------------------------------------------------------------
+; We also change the number of lines for screen modes
+; MODIFIES: AF
+;
+; void vdpSet212Lines(bool b212);
+_vdpSet212Lines::
+    or      a
+    jr      z,disable_212_lines
+
+enable_212_lines:
+    ld      a,#26
+    ld      (CRTCNT),a
+	ld		a,(VDP_REG9)
+	or		#LINES212_BITMASK
+	ld		(VDP_REG9), a
+    
+    jr      setup_212_lines_done
+
+disable_212_lines:
+    ld      a,#24
+    ld      (CRTCNT),a
+	ld		a,(VDP_REG9)
+	and		#~LINES212_BITMASK
+	ld		(VDP_REG9), a
+
+setup_212_lines_done:
+
+    di
+    vdpWriteReg 9
+    ei
     ret
 
 ;-----------------------------------------------
@@ -146,8 +219,6 @@ _setVRAMAddress::
 	srl     d
 
     di
-	; out 	(VDPPORT1), a           ; set bits 14-16
-	; ld  	a, #14|0x80             ; indicate value being a register by setting bit 7
 	vdpWriteReg 14
 
 	ld      a, e                    ; set bits 0-7
@@ -306,7 +377,14 @@ _eternalVDPHammeringByCPU::
 _customISR::
     push	af
 
-    xor 	a                       ; get status for sreg 0
+	ld		a, #1
+    vdpWriteReg 15
+    nop
+	in		a, (VDPPORT1)			; Clear line int flag.
+	; rra										; is the scanline-flag (bit 0) set?
+  	; jp 		c, line_interrupts          ; we do not need to always do something...
+
+    xor 	a                       ; get status for sreg 0 (we anyway need to reset sreg)
     vdpWriteReg 15
     nop								; obey speed
     in		a, (VDPPORT1)			; read VDP S#n to reset VBLANK IRQ
@@ -320,7 +398,6 @@ _customISR::
     jr      z, leave_isr
 
     ; in a,(0x2e)
-
 	xor		a
     ld      (_g_bRecordingEnabled),a
     ld      (_g_bRecordingInitiated),a
@@ -535,6 +612,21 @@ _changeMode::
     ld      ix, #CHGMOD
     call    callSlot
     pop     ix
+    ret
+
+; ----------------------------------------------------------------------------
+; Just wait until a key is pressed.
+; IN:
+; OUT:      a - key code
+; MODIFIES: ? (BIOS...)
+; u8     waitForKey(void);
+_waitForKey::
+
+    push    ix
+    ld      ix, #CHGET
+    call    callSlot
+    pop     ix
+
     ret
 
 ; ----------------------------------------------------------------------------
