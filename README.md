@@ -43,28 +43,32 @@ Regardless of the actuall diffs in condition 4 and 5, the value in 4 should be q
     * From the PANASONIC FS-A1 (V9938), PHILIPS NMS 8245 (V9938) and the SONY HB-F1XD which has 0 extra wait states, the "hammered" command costs 18 cycles, while on the others it costs 19 cycles. I can see from my numbers that this affects the amount of pixels in condition 4. The more CPU commands, the less pixels produced by command engine on COPY commands.
 * I have tried hammering with both READ and WRITE. They seem identical in performance.
 
-### The actual VDP commands (WIP)
+### The actual VDP commands
 
-The short side is 40 pixels (l=40, h=0)
-The long side is 256 pixels (l=0, h=1)
+* Initially page 0 is filled with value 255.
+* Initially page 1 is filled is fully cleared (value 0).
+* The short side of the rect is 40 pixels (low byte: 40, high byte: 0)
+* The long side of the rect is 256 pixels (low byte: 0, high byte: 1)
 
-| Orientation | Command | `sxl, sxh, syl, syh, wl, wh, hl, hh, color, arg` | Log Op |
-| --- | --- | --- | --- |
-| HORIZONTAL  | HMMM | `sxl, sxh, syl, syh, wl, wh, hl, hh, 0xFF, 0` | - |
-| HORIZONTAL  | LMMM | `sxl, sxh, syl, syh, wl, wh, hl, hh, 0xFF, 0` | TEOR |
-| HORIZONTAL  | YMMM | `sxl, sxh, syl, syh, wl, wh, hl, hh, 0xFF, 0` | - |
-| HORIZONTAL  | HMMV | `sxl, sxh, syl, syh, wl, wh, hl, hh, 0xFF, 0` | - |
-| HORIZONTAL  | LMMV | `sxl, sxh, syl, syh, wl, wh, hl, hh, 0xFF, 0` | TOR |
+| Orientation | Command | `sX, sY, sP,  dX, dY, dP,   W,   H, col, arg` | Log Op |
+| ----------- | ------- | --------------------------------------------- | ------ |
+| HORIZONTAL  | HMMM    | ` 0,  0,  0,   0,  0,  1, 256,  40, 255,   0` | -      |
+| HORIZONTAL  | LMMM    | ` 0,  0,  0,   0,  0,  1, 256,  40, 255,   0` | TEOR   |
+| HORIZONTAL  | YMMM    | ` 0,  0,  0,   0,  0,  1, 256,  40, 255,   0` | -      |
+| HORIZONTAL  | HMMV    | ` 0,  0,  0,   0,  0,  1, 256,  40, 255,   0` | -      |
+| HORIZONTAL  | LMMV    | ` 0,  0,  0,   0,  0,  1, 256,  40, 255,   0` | TOR    |
+| VERTICAL    | HMMM    | ` 0,  0,  0, 216,  0,  1,  40, 256, 255,   0` | -      |
+| VERTICAL    | LMMM    | ` 0,  0,  0, 216,  0,  1,  40, 256, 255,   0` | TEOR   |
+| VERTICAL    | YMMM    | ` 0,  0,  0, 216,  0,  1,  40, 256, 255,   0` | -      |
+| VERTICAL    | HMMV    | ` 0,  0,  0, 216,  0,  1,  40, 256, 255,   0` | -      |
+| VERTICAL    | LMMV    | ` 0,  0,  0, 216,  0,  1,  40, 256, 255,   0` | TOR    |
 
-
-
-`s` means source  
-`d` means destination
-
-`syh` is source page  
-`dyh` is destination page
-
-The logical commands are arbitrarily chosen.
+* `s` means source  
+* `d` means destination  
+* `p` means page
+* The logical commands are arbitrarily chosen (but does not give 0)
+* In VERTICAL `dX` had to be moved to 256-width due to YMMM ignoring `W` (width is always 256-sX)
+* After each command has been performed and pixels counted, its area is cleared
 
 ## Requirements
 * **Run:** MSX2 or higher, MSX-DOS
