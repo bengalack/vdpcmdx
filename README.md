@@ -29,7 +29,7 @@ These are the results from Sanyo PHC-70FD in diff mode.
 ![screenshot](img/help_v2.png)
 
 ## Understanding the results
-For real MSX HW, results in conditions 1-3 will likely not diverge much (normal diff is 0-1, maybe a fluke up to 6). Conditions 4 and 5 are harder to get perfect timings on, and we can allow a diff up to ~250 without anything being wrong. I have seen varying results on the same model.
+For real MSX HW, results in conditions 1-3 will likely not diverge much (normal diff is 0-1, maybe a fluke up to 10). Conditions 4 and 5 are harder to get perfect timings on, and we can allow a diff up to ~250 without anything being wrong. I have seen varying results on the same model.
 
 Regardless of the actuall diffs in condition 4 and 5, the value in 4 should be quite lower than in 1, and value in 5 is assumed to be somewhat lower than in 3.
 
