@@ -12,4 +12,10 @@ command.com
 command2.com
 msxdos.sys
 msxdos2.sys
+_command.com
+_command2.com
+_msxdos.sys
+_msxdos2.sys
+dska/*.txt
+
 .vscode/**

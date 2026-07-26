@@ -1,14 +1,111 @@
 ; CRT - C Runtime, SDCC needs this. Must be first and sets a starting point,
 ; a link to main-function and some variables and their order.
+; Default values for variables in C is NOT supported in this version
 ; MSXDOS starts at 0x100
 ; (derived from https://github.com/Konamiman/MSX/blob/master/SRC/SDCC/crt0-msxdos/crt0msx_msxdos_advanced.asm)
-; author: pal.hansen@gmail.com
+; credits go to Konamiman for the original code, I just modified it to my needs.
+; Uses calling convention from SDCC v4.2
+; haxx0r: pal.hansen@gmail.com
 ;
-
 	.globl	_main
 
 	.area _HEADER (ABS)
 	.org    0x0100
+
+	; MSX-DOS places the command line length at 0x80 (one byte),
+	; and the command line itself at 0x81 (up to 127 characters).
+	; Build the parameter pointers table on 0x100 (ie. overwrite the
+	; original code), pointing to the original locations at 0x0080+
+	; and terminate each parameter with 0.
+
+	; Check if there are any parameters at all
+	ld      a,(#0x80)
+	or      a
+	ld      c,#0
+	jr      z,cont
+	
+	; Terminate command line with 0
+	; (DOS 2 does this automatically but DOS 1 does not)
+	ld      hl,#0x81
+	ld      bc,(#0x80)
+	ld      b,#0
+	add     hl,bc
+	ld      (hl),#0
+	
+	; Copy the command line processing code to HEAP and
+	; execute it from there, this way the memory of the original code
+	; can be recycled for the parameter pointers table.
+	; (The space from 0x100 up to "cont" can be used,
+	; this is room for about 40 parameters.
+	; No real world application will handle so many parameters.)
+	ld      hl,#parloop
+	ld      de,#_HEAP_start
+	ld      bc,#parloopend-#parloop
+	ldir
+	
+	; Initialize registers and jump to the loop routine
+	ld      hl,#0x81        ; Command line pointer
+	ld      c,#0            ; Number of params found
+	ld      ix,#0x100       ; Params table pointer
+	
+	ld      de,#cont        ; To continue execution at "cont"
+	push    de              ; when the routine RETs
+	jp      _HEAP_start
+	
+	; Loop over the command line: skip spaces
+parloop:
+	ld      a,(hl)
+	or      a       		;Command line end found?
+	ret     z
+
+	cp      #32
+	jr      nz,parfnd
+	inc     hl
+	jr      parloop
+
+	; Parameter found: add its address to params table...
+
+parfnd:
+	ld      (ix),l
+	ld      1(ix),h
+	inc     ix
+	inc     ix
+	inc     c
+	
+	ld      a,c     		;protection against too many parameters
+	cp      #40
+	ret     nc
+	
+	; ...and skip chars until finding a space or command line end
+	
+parloop2:
+    ld      a,(hl)
+	or      a       		; Command line end found?
+	ret     z
+	
+	cp      #32
+	jr      nz,nospc        ; If space found, set it to 0
+							; (string terminator)...
+	ld      (hl),#0
+	inc     hl
+	jr      parloop         ; ...and return to space skipping loop
+
+nospc:
+	inc     hl
+	jr      parloop2
+
+parloopend:
+	; Command line processing done. Here, C = number of parameters.
+
+cont:
+	; seems like SDCC needs _heap_top for malloc and such
+	ld 		de,#_HEAP_start
+	ld 		(_heap_top),de
+
+	; prepare parameters for: u8 main(char** argv, u8 argc)
+	ld      hl,#0x100			; first param in HL (16-bit)
+	ld      b,#0				;
+	push 	bc					; second param on the stack (8-bit)
 
     call    _main
 
@@ -21,10 +118,16 @@
 
     .area _HOME
 	.area _CODE                     ; Note: The location of THIS variable is the input for the SDCC compiler (--code-loc)
-	.area _GSINIT
-	.area _GSFINAL
-	.area _INITIALIZER
-	.area _ROMDATA
+	.area _GSINIT					; I'm not using this
+	.area _GSFINAL					; I'm not using this
+	.area _INITIALIZER				; I'm not using this
+	.area _ROMDATA					; I'm not using this
 	.area _DATA
-	.area _INITIALIZED
+
+_heap_top::
+	.dw 0
+
+	.area _INITIALIZED				; I'm not using this
 	.area _HEAP
+
+_HEAP_start::

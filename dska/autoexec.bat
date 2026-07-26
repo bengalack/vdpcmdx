@@ -1,1 +1,1 @@
-vdpcmdx
+rem vdpcmdx

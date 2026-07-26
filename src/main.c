@@ -11,7 +11,8 @@
 //      * u  = unsigned char  (u8)
 //      * i  = signed short   (s16)
 //      * n  = unsigned short (u16)
-//      * l  = unsigned long  (u32)
+//      * l  = signed long    (s32)
+//      * ul = unsigned long  (u32)
 //      * f  = float
 //      * p  = pointer
 //      * o  = object (struct)
@@ -26,8 +27,8 @@
 // author: pal.hansen@gmail.com
 // ---------------------------------------------------------------------------
 
-#include <stdio.h>      // herein be sprintf 
-#include <string.h>     // memcpy/memset
+#include <stdio.h>      // herein be sprintf
+#include <string.h>     // memcpy/memset/strcmp
 #include <stdbool.h>
 
 // Typedefs & defines --------------------------------------------------------
@@ -71,12 +72,16 @@ enum raster_location { VBLANK, ACTIVE_AREA, RASTER_LOCATION_COUNT };
 enum orientation { LANDSCAPE, PORTRAIT, ORIENTATION_COUNT };
 enum condition { NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU, CONDITION_COUNT };
 enum freq_variant { NTSC, PAL, FREQ_COUNT };
+enum line_variant { NORMAL192, EXTENDED212, LINE_VARIANT_COUNT };
 
 typedef signed char         s8;
 typedef unsigned char       u8;
 typedef signed short        s16;
 typedef unsigned short      u16;
+typedef signed long         s32;
 typedef unsigned long       u32;
+
+#define MAX_SYS_LEN         28
 
 #define PIX_LEN_BIGL        0 // pixels
 #define PIX_LEN_BIGH        1 // pixels
@@ -118,43 +123,59 @@ extern bool     hasTurboFeature(void) __preserves_regs(d,e,h,l,iyl,iyh);
 
 extern u8       changeMode(u8 uModeNum); 
 extern void     setLineWidth(u8 uWidth);
+extern void     customISR(void);
+extern void     eternalVDPHammeringByCPU(void);
+extern void     print(u8* szMessage);
+extern u8       waitForKey(void);
+extern bool     userOutputsToScreen(void);
 
 extern void     setVDPCmdParamsNI(u8 uPageCode, VDPParams* p); // uPageCod:e SSSSDDDD, S=source page, D=dest page
 extern void     executeCmdWithPreppedParamsNI(u8 uCmd);
 extern void     waitForVDPCmd(void);
 extern u16      countWrittenPixelsNI(u16 nNumPixels); // Assume NI
-
-extern void     customISR(void);
-extern void     eternalVDPHammeringByCPU(void);
-
-extern void     print(u8* szMessage);
 extern bool     getPALRefreshRate(void);
+extern void     setPALRefreshRate(bool bEnabled);
 extern void     setVRAMAddress(u8 uBitCodes, u16 nVRAMAddress);
 extern void     vdpSpritesEnabled(bool bEnabled);
 extern void     vdpScreenEnabled(bool bEnabled);
 extern void     vdpSet212Lines(bool b212);
 extern void     vdpEnableLineInterruptNI(bool bEnable);
 extern void     vdpSetInterruptLine(u8 uLine);
-extern u8       waitForKey(void);
 
 // Consts --------------------------------------------------------------------
 //
-const u8                g_szVersion[]       = "1.0";
+const u8                g_szVersion[]       = "2.0";
 const u8                g_szErrorMSX[]      = "MSX2 or higher is required";
-const u8                g_szGreeting[]      = "VDP CMD X Timings v%s. Pixels handled in one frame. 192 lines (%dHz detected)\r\n";
+const u8                g_szTopLine[]       = "VDPCMDX v%s. screen 8, %s lines, %dHz%s, %s\r\n";
                                             //"                             " // 29 chars (turbo r)
-const u8                g_szInfo1[]         = "VDP CMD X timings v%s\r\n";
-const u8                g_szInfo2[]         = "Pixels handled in one frame\r\n";
-const u8                g_szInfo3[]         = "Frequency: %d Hz detected)\r\n";
-const u8                g_szInfo4[]         = "Screen %d. 192 line mode.\r\n";
-const u8                g_szInfo5[]         = "Press a key to start test.\r\n";
-const u8                g_szFullLine0[]     = "----------------------------\r\n"; // 28 of them, not really a full line :)
-const u8                g_szFullLine[]      = "--------------------------------------------------------------------------------";
+const u8                g_szFullLine[]      = "-------------------------------------------------------------------------------\r\n";
 const u8                g_szHeader1[]       = "                   NORMAL   |   NO SPR   |   NO SCR   | NORMAL+CPU | NO SCR+CPU\r\n";
-const u8                g_szHeader2[]       = " # OPERATION     THIS  REAL | THIS  REAL | THIS  REAL | THIS  REAL | THIS  REAL\r\n";
+// const u8                g_szHeader2[]       = " # OPERATION     THIS  REAL | THIS  REAL | THIS  REAL | THIS  REAL | THIS  REAL\r\n";
+const u8                g_szHeader2[]       = " # OPERATION     THIS  %s | THIS  %s | THIS  %s | THIS  %s | THIS  %s\r\n";
 const u8                g_szLastwords[]     = "1-5:landscape, 6-10:portrait, first 10:raster beam in VBLANK, last 10:ACTIVE ";
-const u8                g_szResultLine[]    = "%2d %s    %5hu %5hu |%5hu %5hu |%5hu %5hu |%5hu %5hu |%5hu %5hu";
-const u8                g_szNewLine[]    = "\r\n";
+const u8                g_szResultLine[]    = "%2d %s    %5hu %5ld |%5hu %5ld |%5hu %5ld |%5hu %5ld |%5hu %5ld\r\n";
+const u8                g_szREAL[]          = "REAL";
+const u8                g_szDIFF[]          = "DIFF";
+                                          //"                             " // 29 chars (turbo r)
+const u8                g_szHelptext[]      = "Usage:vdpcmdx.com [opt][sys]\r\n"
+                                            "\r\n"
+                                            "Counts pixels handled by the\r\n"
+                                            "VDP CMD Engine in one frame.\r\n"
+                                            "Output is written to stdout.\r\n"
+                                            "Unless output is redirected,\r\n"
+                                            "program exits in width 80.\r\n"
+                                            "\r\n"
+                                            "Version: %s\r\n"
+                                            "\r\n"
+                                            "Options (opt):\r\n"
+                                            " -h Show this help message\r\n"
+                                            // " -5 Screen 5 (default: 8)\r\n"
+                                            " -p PAL (default: current)\r\n"
+                                            " -n NTSC (default: current)\r\n"
+                                            " -l 212 lines (default: 192)\r\n"
+                                            " -d Show data as diff vs REAL\r\n"
+                                            "\r\n"
+                                            "sys: Show sys name in report\r\n";
 
 const u8* const         aTEST_NAME[NUM_TESTS] = \
                         {
@@ -176,81 +197,161 @@ const u8 const          aEXECUTE_CMD[NUM_TESTS] = \
                             // ,VDPCMD_LINE | LOGICAL_OP_EOR   // just random logical op (which does not become 0)
                         };
 
-const u16 const         aTARGETS[RASTER_LOCATION_COUNT][FREQ_COUNT][ORIENTATION_COUNT][NUM_TESTS][CONDITION_COUNT] = 
+const u16 const         aTARGETS[LINE_VARIANT_COUNT][RASTER_LOCATION_COUNT][FREQ_COUNT][ORIENTATION_COUNT][NUM_TESTS][CONDITION_COUNT] = 
                         {
-                            { // VBLANK
-                                { // NTSC
-                                    { // LANDSCAPE
-                                        // TEST #
-                                        { 1039, 1050, 1054, 1002, 989 }, // NORMAL
-                                        { 729, 740, 740, 723, 739 }, // NO_SPRITES
-                                        { 1446, 1471, 1474, 1303, 1337 }, // NO_SCREEN
-                                        { 1940, 1944, 1961, 1920, 1896 }, // NORMAL_CPU
-                                        { 972, 976, 985, 942, 952}  // NO_SCREEN_CPU
+                            { // NORMAL192
+                                { // VBLANK
+                                    { // NTSC
+                                        { // LANDSCAPE
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 1039, 1050, 1054, 1032, 1053 }, 
+                                            { 729, 740, 740, 724, 739 },
+                                            { 1446, 1471, 1474, 1302, 1336 },
+                                            { 1940, 1944, 1961, 1864, 1901 },
+                                            { 972, 976, 985, 933, 984 }
+                                        },
+                                        { // PORTRAIT
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 1019, 1029, 1032, 1009, 1032 }, 
+                                            { 725, 736, 736, 715, 732 },
+                                            { 1414, 1440, 1444, 1275, 1310 },
+                                            { 1868, 1871, 1887, 1843, 1856 },
+                                            { 957, 961, 971, 944, 941 }
+                                        }
                                     },
-                                    { // PORTRAIT
-                                        // TEST #
-                                        { 1019, 1029, 1032, 1011, 984 }, // NORMAL
-                                        { 725, 736, 736, 712, 729 }, // NO_SPRITES
-                                        { 1414, 1440, 1444, 1275, 1310 }, // NO_SCREEN
-                                        { 1868, 1871, 1887, 1849, 1880 }, // NORMAL_CPU
-                                        { 957, 961, 971, 922, 941}  // NO_SCREEN_CPU
+                                    { // PAL
+                                        { // LANDSCAPE
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 1802, 1813, 1815, 1682, 1815 }, 
+                                            { 1265, 1275, 1275, 1257, 1274 },
+                                            { 2512, 2538, 2541, 2212, 2302 },
+                                            { 3360, 3362, 3380, 3238, 3275 },
+                                            { 1684, 1688, 1697, 1637, 1638 }
+                                        },
+                                        { // PORTRAIT
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 1765, 1776, 1778, 1756, 1778 }, 
+                                            { 1258, 1268, 1269, 1245, 1261 },
+                                            { 2461, 2485, 2488, 2220, 2254 },
+                                            { 3229, 3231, 3247, 3203, 3240 },
+                                            { 1659, 1662, 1670, 1602, 1630 }
+                                        }
                                     }
                                 },
-                                { // PAL
-                                    { // LANDSCAPE
-                                        // TEST #
-                                        { 1801, 1813, 1815, 1794, 1702 }, // NORMAL
-                                        { 1265, 1275, 1275, 1257, 1274 }, // NO_SPRITES
-                                        { 2512, 2538, 2541, 2268, 2302 }, // NO_SCREEN
-                                        { 3360, 3362, 3380, 3232, 3379 }, // NORMAL_CPU
-                                        { 1684, 1688, 1697, 1619, 1695 }  // NO_SCREEN_CPU
+                                { // ACTIVE_AREA
+                                    { // NTSC
+                                        { // LANDSCAPE
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 1916, 2673, 2854, 1156, 2853 }, 
+                                            { 1339, 1971, 2003, 771, 2002 },
+                                            { 2111, 3799, 3996, 1165, 3618 },
+                                            { 4005, 4195, 5313, 1935, 5139 },
+                                            { 1908, 2106, 2668, 969, 2604 }
+                                        },
+                                        { // PORTRAIT
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 1916, 2659, 2796, 1132, 2795 }, 
+                                            { 1332, 1955, 1993, 705, 1981 },
+                                            { 2093, 3689, 3914, 1153, 3477 },
+                                            { 3920, 4120, 5094, 1938, 5031 },
+                                            { 1869, 2106, 2626, 969, 2547 }
+                                        }
                                     },
-                                    { // PORTRAIT
-                                        // TEST #
-                                        { 1765, 1776, 1778, 1757, 1778 }, // NORMAL
-                                        { 1258, 1268, 1269, 1239, 1261 }, // NO_SPRITES
-                                        { 2461, 2485, 2488, 2223, 2254 }, // NO_SCREEN
-                                        { 3229, 3231, 3247, 3165, 3240 }, // NORMAL_CPU
-                                        { 1659, 1662, 1670, 1640, 1660 }  // NO_SCREEN_CPU
+                                    { // PAL
+                                        { // LANDSCAPE
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 1915, 2673, 2854, 1156, 2854 }, 
+                                            { 1339, 1971, 2004, 679, 2002 },
+                                            { 2111, 3797, 3996, 1165, 3528 },
+                                            { 4005, 4195, 5313, 2123, 5140 },
+                                            { 1908, 2106, 2668, 969, 2604 }
+                                        },
+                                        { // PORTRAIT
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 1916, 2659, 2796, 1132, 2675 }, 
+                                            { 1332, 1955, 1993, 755, 1981 },
+                                            { 2095, 3689, 3914, 1153, 3544 },
+                                            { 3922, 4120, 5094, 2109, 5021 },
+                                            { 1869, 2106, 2627, 1135, 2547 }
+                                        }
                                     }
                                 }
                             },
-                            { // ACTIVE_AREA
-                                { // NTSC
-                                    { // LANDSCAPE
-                                        // TEST #
-                                        { 1916, 2673, 2854, 1160, 2674 }, // NORMAL
-                                        { 1339, 1971, 2003,  773, 2000 }, // NO_SPRITES
-                                        { 2111, 3799, 3996, 1167, 3616 }, // NO_SCREEN
-                                        { 4005, 4195, 5313, 2313, 5137 }, // NORMAL_CPU
-                                        { 1908, 2106, 2668, 1156, 2573 }  // NO_SCREEN_CPU
+                            { // EXTENDED212
+                                { // VBLANK
+                                    { // NTSC
+                                        { // LANDSCAPE
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 741, 752, 755, 732, 755 }, 
+                                            { 518, 530, 530, 514, 530 },
+                                            { 1027, 1051, 1055, 923, 959 },
+                                            { 1384, 1387, 1403, 1320, 1358 },
+                                            { 694, 696, 706, 639, 659 }
+                                        },
+                                        { // PORTRAIT
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 726, 738, 740, 717, 739 }, 
+                                            { 517, 527, 526, 509, 523 },
+                                            { 1005, 1030, 1036, 903, 939 },
+                                            { 1335, 1340, 1356, 1311, 1348 },
+                                            { 682, 687, 696, 670, 683 }
+                                        }
                                     },
-                                    { // PORTRAIT
-                                        // TEST #
-                                        { 1916, 2659, 2796, 1160, 2731 }, // NORMAL
-                                        { 1332, 1955, 1993,  773, 1981 }, // NO_SPRITES
-                                        { 2093, 3689, 3914, 1336, 3543 }, // NO_SCREEN
-                                        { 3920, 4120, 5094, 2111, 5092 }, // NORMAL_CPU
-                                        { 1869, 2106, 2626, 1144, 2609 }  // NO_SCREEN_CPU
+                                    { // PAL
+                                        { // LANDSCAPE
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 1502, 1514, 1517, 1402, 1517 }, 
+                                            { 1053, 1065, 1064, 1047, 1064 },
+                                            { 2094, 2120, 2122, 1887, 1923 },
+                                            { 2804, 2807, 2822, 2699, 2730 },
+                                            { 1405, 1408, 1418, 1394, 1416 }
+                                        },
+                                        { // PORTRAIT
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 1472, 1484, 1486, 1463, 1485 }, 
+                                            { 1049, 1060, 1061, 1031, 1053 },
+                                            { 2049, 2077, 2080, 1849, 1883 },
+                                            { 2697, 2700, 2716, 2671, 2708 },
+                                            { 1383, 1389, 1396, 1343, 1321 }
+                                        }
                                     }
                                 },
-                                { // PAL
-                                    { // LANDSCAPE
-                                        // TEST #
-                                        { 1915, 2673, 2854, 1160, 2674 }, // NORMAL
-                                        { 1339, 1971, 2004,  774, 2002 }, // NO_SPRITES
-                                        { 2111, 3797, 3996, 1167, 3617 }, // NO_SCREEN
-                                        { 4005, 4195, 5313, 2310, 5136 }, // NORMAL_CPU
-                                        { 1908, 2106, 2668, 1158, 2573 }  // NO_SCREEN_CPU
+                                { // ACTIVE_AREA
+                                    { // NTSC
+                                        { // LANDSCAPE
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 2116, 2952, 3153, 1173, 3152 }, 
+                                            { 1479, 2177, 2213, 850, 2211 },
+                                            { 2329, 4193, 4413, 1284, 3996 },
+                                            { 4422, 4631, 5869, 2342, 5672 },
+                                            { 2106, 2325, 2946, 1275, 2942 }
+                                        },
+                                        { // PORTRAIT
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 2116, 2937, 3087, 1254, 3087 }, 
+                                            { 1470, 2159, 2201, 745, 2188 },
+                                            { 2312, 4074, 4322, 1284, 3915 },
+                                            { 4331, 4548, 5626, 2138, 5619 },
+                                            { 2063, 2324, 2901, 1069, 2881 }
+                                        }
                                     },
-                                    { // PORTRAIT
-                                        // TEST #
-                                        { 1916, 2659, 2796, 1160, 2795 }, // NORMAL
-                                        { 1332, 1955, 1993,  775, 1972 }, // NO_SPRITES
-                                        { 2095, 3689, 3914, 1166, 3543 }, // NO_SCREEN
-                                        { 3922, 4120, 5094, 2286, 5031 }, // NORMAL_CPU
-                                        { 1869, 2106, 2627, 1158, 2547 }  // NO_SCREEN_CPU
+                                    { // PAL
+                                        { // LANDSCAPE
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 2115, 2952, 3152, 1275, 2955 }, 
+                                            { 1479, 2176, 2213, 749, 2211 },
+                                            { 2330, 4194, 4412, 1284, 3996 },
+                                            { 4422, 4632, 5868, 2135, 5678 },
+                                            { 2106, 2325, 2946, 1275, 2877 }
+                                        },
+                                        { // PORTRAIT
+                                            // TEST # (NORMAL, NO_SPRITES, NO_SCREEN, NORMAL_CPU, NO_SCREEN_CPU)
+                                            { 2115, 2937, 3088, 1249, 3087 }, 
+                                            { 1470, 2160, 2201, 745, 2178 },
+                                            { 2313, 4074, 4321, 1271, 3914 },
+                                            { 4330, 4548, 5627, 2328, 5619 },
+                                            { 2063, 2324, 2901, 1069, 2881 }
+                                        }
                                     }
                                 }
                             }
@@ -291,15 +392,19 @@ const VDPParams const   aTEST_PARAMS[ORIENTATION_COUNT][NUM_TESTS] = \
 u8                      g_auBuffer[ 256 ];      // temp/general buffer here to avoid stack explosion
 void* __at(0x0039)      g_pInterrupt;           // We assume that 0x0038 already holds 0xC3 (JP) in dos mode at startup
 void*                   g_pInterruptOrg;
+u8                      g_uFreqVariantOrg;      // NTSC or PAL
 u8                      g_uFreqVariant;         // NTSC or PAL
 volatile bool           g_bRecordingEnabled;    // Gate 1
 volatile bool           g_bRecordingInitiated;  // Gate 2
 volatile bool           g_bRecordingCPUHammering;
 
+u8                      g_auSysStr[MAX_SYS_LEN];// name of system
+
 u8                      g_uXPosL;               // We need this value to right hand side of screen in YMMM
 
 u16                     g_anResult[RASTER_LOCATION_COUNT][ORIENTATION_COUNT][CONDITION_COUNT][NUM_TESTS];
-u8                      HAMMERING_CODE_BLOCK[BLOCK_SIZE*2+3]; // 2 bytes each. This is for the CPU hammering code, which needs to be in RAM
+u8*                     pHAMMERING_CODE_BLOCK; // set to _HEAP_start in initVarsAndRig; avoiding a static array which bloats the COM binary
+extern u8               HEAP_start[];         // asm symbol _HEAP_start: first byte after all program data
 
 // ---------------------------------------------------------------------------
 void fillPageBg(u8 uPage, VDPParams* p)
@@ -342,12 +447,17 @@ void alignBox(u8 uOrientation)
 }
 
 // ---------------------------------------------------------------------------
+// Puts hammering code in the heap (without allocating it - too big for standard
+// SDCC allocation which is 1kB)
 void initVarsAndRig(void)
 {
-    g_uFreqVariant = getPALRefreshRate()? PAL : NTSC;
+    strcpy(g_auSysStr,"<system/model name not set>");
+
+    pHAMMERING_CODE_BLOCK = HEAP_start;
+    g_uFreqVariantOrg = getPALRefreshRate()? PAL : NTSC;
+    g_uFreqVariant = g_uFreqVariantOrg;
     memset(g_anResult, 0, sizeof(g_anResult));
-    // memset(NON_ZERO_BLOCK, 0xFF, sizeof(NON_ZERO_BLOCK)); // We put known values here, so any OUTI writes non-zero values
-    alignBox(0);
+    alignBox(0); // sets g_uXPosL
 
     // We need unrolled VDP hammering code where the CPU can run for a full frame
     // i.e. > 70000 cycles. We'll use INI/OUTI, which is 18 MSX cycles. Or IN/OUT (12)
@@ -360,7 +470,7 @@ void initVarsAndRig(void)
     // OUTI:      ED A3
     // IN A,(n):  DB n
     // OUT (n),a: D3 n
-    u8* p = HAMMERING_CODE_BLOCK;
+    u8* p = pHAMMERING_CODE_BLOCK;
     u16 p_org = (u16)p;
 
     for(u16 n=0; n < BLOCK_SIZE; n++)
@@ -431,8 +541,6 @@ u16 runTestSingle(u8 uOrientation, u8 nTest, bool bUseCPU, bool bVBlank)
         vdpEnableLineInterruptNI(true);
         enableInterrupt();
 
-// break();
-
     if(bVBlank)
     {
         halt(); // get past the line interrupt at line 0
@@ -476,88 +584,67 @@ void runTests(u8 uCondition)
 }
 
 // ---------------------------------------------------------------------------
-void printStartInfo(void)
+void printReport(bool bDiffMode, bool bPALSet, bool bNTSCSet, bool b212Set)
 {
-    print(g_szFullLine0);
-    
-    sprintf(g_auBuffer, g_szInfo1, g_szVersion);
-    print(g_auBuffer);
+    sprintf(g_auBuffer,
+            g_szTopLine,
+            g_szVersion,
+            b212Set? "212" : "192",
+            g_uFreqVariant==PAL ? 50 : 60,
+            (!bPALSet && !bNTSCSet) ? " (detected)" : "",
+            g_auSysStr
+           );
 
-    print(g_szInfo2);
-
-    sprintf(g_auBuffer, g_szInfo3, g_uFreqVariant==PAL ? 50 : 60);
-    print(g_auBuffer);
-
-    sprintf(g_auBuffer, g_szInfo4, SCREEN_MODE);
-    print(g_auBuffer);
-
-    print(g_szInfo5);
-    print(g_szFullLine0);
-}
-
-// ---------------------------------------------------------------------------
-void printReport(void)
-{
-    sprintf(g_auBuffer, g_szGreeting, g_szVersion, g_uFreqVariant==PAL ? 50 : 60);
     print(g_auBuffer);
 
     print(g_szHeader1);
-    print(g_szHeader2);
+
+    const u8* p = bDiffMode? g_szDIFF : g_szREAL;
+    sprintf(g_auBuffer, g_szHeader2, p, p, p, p, p);
+    print(g_auBuffer);
+
     print(g_szFullLine);
 
-    u8 uLine;
 
-    uLine = 1;
-    for(u8 o = 0; o < ORIENTATION_COUNT; o++)
+    s32 lShowNumber[CONDITION_COUNT];
+
+    u8 uLineVariant = b212Set? EXTENDED212 : NORMAL192;
+
+    for(u8 r = 0; r<RASTER_LOCATION_COUNT; r++)
     {
-        for(u8 t = 0; t < NUM_TESTS; t++)
+        u8 uLine = 1;
+
+        for(u8 o = 0; o < ORIENTATION_COUNT; o++)
         {
-            sprintf(g_auBuffer,
-                    g_szResultLine,
-                    uLine,
-                    aTEST_NAME[t],
-                    g_anResult[VBLANK][o][t][NORMAL],
-                    aTARGETS[VBLANK][g_uFreqVariant][o][t][NORMAL],
-                    g_anResult[VBLANK][o][t][NO_SPRITES],
-                    aTARGETS[VBLANK][g_uFreqVariant][o][t][NO_SPRITES],
-                    g_anResult[VBLANK][o][t][NO_SCREEN],
-                    aTARGETS[VBLANK][g_uFreqVariant][o][t][NO_SCREEN],
-                    g_anResult[VBLANK][o][t][NORMAL_CPU],
-                    aTARGETS[VBLANK][g_uFreqVariant][o][t][NORMAL_CPU],
-                    g_anResult[VBLANK][o][t][NO_SCREEN_CPU],
-                    aTARGETS[VBLANK][g_uFreqVariant][o][t][NO_SCREEN_CPU]
+            for(u8 t = 0; t < NUM_TESTS; t++)
+            {
+                for(u8 c = 0; c < CONDITION_COUNT; c++) // set the correct number
+                {
+                    if(bDiffMode)
+                        lShowNumber[c] = (s32)(g_anResult[r][o][t][c]) - (s32)(aTARGETS[uLineVariant][r][g_uFreqVariant][o][t][c]);
+                    else
+                        lShowNumber[c] = (s32)(aTARGETS[uLineVariant][r][g_uFreqVariant][o][t][c]);
+                }
+
+                sprintf(g_auBuffer,
+                        g_szResultLine,
+                        uLine,
+                        aTEST_NAME[t],
+                        g_anResult[r][o][t][NORMAL],
+                        lShowNumber[NORMAL],
+                        g_anResult[r][o][t][NO_SPRITES],
+                        lShowNumber[NO_SPRITES],
+                        g_anResult[r][o][t][NO_SCREEN],
+                        lShowNumber[NO_SCREEN],
+                        g_anResult[r][o][t][NORMAL_CPU],
+                        lShowNumber[NORMAL_CPU],
+                        g_anResult[r][o][t][NO_SCREEN_CPU],
+                        lShowNumber[NO_SCREEN_CPU]
                     );
 
-            print(g_auBuffer);
-            print(g_szNewLine);
-            uLine++;
-        }
-    }
-
-    uLine = 1;
-    for(u8 o = 0; o < ORIENTATION_COUNT; o++)
-    {
-        for(u8 t = 0; t < NUM_TESTS; t++)
-        {
-            sprintf(g_auBuffer,
-                    g_szResultLine,
-                    uLine,
-                    aTEST_NAME[t],
-                    g_anResult[ACTIVE_AREA][o][t][NORMAL],
-                    aTARGETS[ACTIVE_AREA][g_uFreqVariant][o][t][NORMAL],
-                    g_anResult[ACTIVE_AREA][o][t][NO_SPRITES],
-                    aTARGETS[ACTIVE_AREA][g_uFreqVariant][o][t][NO_SPRITES],
-                    g_anResult[ACTIVE_AREA][o][t][NO_SCREEN],
-                    aTARGETS[ACTIVE_AREA][g_uFreqVariant][o][t][NO_SCREEN],
-                    g_anResult[ACTIVE_AREA][o][t][NORMAL_CPU],
-                    aTARGETS[ACTIVE_AREA][g_uFreqVariant][o][t][NORMAL_CPU],
-                    g_anResult[ACTIVE_AREA][o][t][NO_SCREEN_CPU],
-                    aTARGETS[ACTIVE_AREA][g_uFreqVariant][o][t][NO_SCREEN_CPU]
-                    );
-
-            print(g_auBuffer);
-            print(g_szNewLine);
-            uLine++;
+                print(g_auBuffer);
+                uLine++;
+            }
         }
     }
 
@@ -586,18 +673,77 @@ __asm
     jr nz,00001$
 
     ld a,#0x2d      ; dash
-    ld b,#80        ; one line
+    ld b,#79        ; one line
 00002$:
     out (0x98),a
     djnz 00002$
+
+    ld a,#0x20      ; space
+    out (0x98),a
 
     ei
 __endasm;
 }
 
 // ---------------------------------------------------------------------------
-u8 main(void)   
+void printHelp(void)
 {
+    sprintf(g_auBuffer, g_szHelptext, g_szVersion);
+    print(g_auBuffer);
+}
+
+// ---------------------------------------------------------------------------
+// Do the test. If interactive/screen mode, enable 26,5 lines for output +
+// wait for keypress before returning. When output is redirected to file,
+// we don't do this.
+u8 main(char** argv, u8 argc)
+{
+    bool bNTSCSet = false;
+    bool bPALSet = false;
+    bool b212Set = false;
+    bool bDiffMode = false;
+
+    initVarsAndRig();
+
+    // ------------------------------------
+    // Check params
+    if(argc > 0)
+    {
+        for(u8 n=0; n < argc; n++)
+        {
+            if(strcmp(argv[n], "-h") == 0 || strcmp(argv[n], "--help") == 0)
+            {
+                printHelp();
+                return 0;
+            }
+            else if(strcmp(argv[n], "-p") == 0)
+            {
+                bPALSet = true;
+                g_uFreqVariant = PAL;
+            }
+            else if(strcmp(argv[n], "-n") == 0)
+            {
+                bNTSCSet = true;
+                g_uFreqVariant = NTSC;
+            }
+            else if(strcmp(argv[n], "-l") == 0)
+                b212Set = true;
+            else if(strcmp(argv[n], "-d") == 0)
+                bDiffMode = true;
+            else
+            {
+                if(strlen(argv[n]) > MAX_SYS_LEN-1) // minus the zero terminator
+                {
+                    sprintf(g_auBuffer, "ERROR:Sys name too long (>%d)", MAX_SYS_LEN-1);
+                    print(g_auBuffer);
+                    return 1;
+                }
+
+                strcpy(g_auSysStr, argv[n]);
+            }
+        }
+    }
+
     // ------------------------------------
     // Initialize
     u8 uType = getMSXType();
@@ -628,18 +774,19 @@ u8 main(void)
         }
     }
 
-
-    initVarsAndRig();
-
-
-    printStartInfo();
-    waitForKey();
+    bool hasScreenOutput = userOutputsToScreen();
 
     setCustomISR(); 
-    
-    changeMode(SCREEN_MODE);
-    
-    vdpSet212Lines(false);
+
+    u8 uPrevScrMode = changeMode(SCREEN_MODE);
+
+    if(bPALSet)
+        setPALRefreshRate(true);
+
+    if(bNTSCSet)
+        setPALRefreshRate(false);
+
+    vdpSet212Lines(b212Set);
     vdpSetInterruptLine(0);
 
     fillPageBg(0, &FILL_FULL_AREA);
@@ -666,18 +813,25 @@ u8 main(void)
     vdpScreenEnabled(true);
 
     // ----------------------------------
-    // Start cleanup for returning to DOS
+    // Start cleanup before returning to DOS
     restoreOriginalISR();
 
-    setLineWidth(80);
-    changeMode(0);
-    vdpSet212Lines(true);
+    if(hasScreenOutput) // prepare wide and large screen when not redirecting to file
+    {
+        setLineWidth(80);
+        changeMode(0);
 
-    clearScreenRaw();
+        vdpSet212Lines(true);
+        clearScreenRaw();
+    }
+    else
+    {
+        changeMode(uPrevScrMode);
+    }
 
     // ----------------------------------
     // Show summary
-    printReport();
+    printReport(bDiffMode, bPALSet, bNTSCSet, b212Set);
 
     if(sOrgCPU != -1)
         changeCPU(sOrgCPU);
@@ -685,9 +839,16 @@ u8 main(void)
     if(bRestoreTurbo)
         enableTurbo(true);
 
-    waitForKey();
+    if(hasScreenOutput)
+    {
+        waitForKey();
+        vdpSet212Lines(false);
+    }
+    else if(b212Set)
+        vdpSet212Lines(false);
 
-    vdpSet212Lines(false);
+    if(bPALSet || bNTSCSet)
+        setPALRefreshRate(g_uFreqVariantOrg == PAL);
 
     return 0;
 }
