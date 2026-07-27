@@ -46,7 +46,7 @@ Regardless of the actuall diffs in condition 4 and 5, the value in 4 should be q
 ### The actual VDP commands
 
 * Initially page 0 is filled with value 255.
-* Initially page 1 is filled is fully cleared (value 0).
+* Initially page 1 is fully cleared (value 0).
 * The short side of the rect is 40 pixels (low byte: 40, high byte: 0)
 * The long side of the rect is 256 pixels (low byte: 0, high byte: 1)
 
