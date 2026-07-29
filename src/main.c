@@ -103,14 +103,6 @@ typedef struct {
     u8                      arg;    // line: isVert (bool)
 } VDPParams; // NOTE: Command is not part of this
 
-// -------------------------------------------------------------------------
-typedef union {
-	struct {
-		u8  xl,xh,yl,yh;
-	};
-	u32 xxyy;
-} Coords;
-
 // Declarations (see .s-file) ------------------------------------------------
 //
 extern u8       getMSXType(void);
@@ -144,7 +136,7 @@ extern void     vdpSetInterruptLine(u8 uLine);
 
 // Consts --------------------------------------------------------------------
 //
-const u8                g_szVersion[]       = "2.0";
+const u8                g_szVersion[]       = "2.1";
 const u8                g_szErrorMSX[]      = "MSX2 or higher is required";
 const u8                g_szTopLine[]       = "VDPCMDX v%s. screen 8, %s lines, %dHz%s, %s\r\n";
                                             //"                             " // 29 chars (turbo r)

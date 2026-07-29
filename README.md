@@ -1,5 +1,7 @@
 # vdpcmdx | Measure V9938/V9958 command performance on the MSX
 
+**IMPORTANT: If you have downloaded v2.0, please update to v2.1.**
+
 This tool is the successor to [vdpcmd](https://github.com/bengalack/vdpcmd). This time we address the difference between VBLANK AREA and ACTIVE AREA and make it possible to fully automate the tests and write to stdout/files.
 
 Compare your current VDP's command engine performance with real life / target numbers, using this simple __msx dos__ application. Download [here](https://github.com/bengalack/vdpcmdx/raw/refs/heads/master/dska/vdpcmdx.com).
