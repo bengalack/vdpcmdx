@@ -341,7 +341,9 @@ _waitForVDPCmd::
 	jp	nz, _waitForVDPCmd      ; as this one allows interrupts, the interrupt will set another status reg, so we need to re-set it
     
 	xor a
+    di
     vdpWriteReg 15              ; restore 0 as selected status reg
+    ei
 
     ret
 
